@@ -81,10 +81,16 @@ pub(crate) struct Mesh<'a> {
 }
 
 impl Mesh<'_> {
-    fn get_iter(&self) -> impl Iterator<Item = &ThreeD> {
+    fn len(&self) -> usize {
         match &self.indices {
-            None => self.positions.into_iter(),
-            Some(_) => todo!(),
+            None => self.positions.len(),
+            Some(i) => i.len(),
+        }
+    }
+    fn get(&self, i: usize) -> ThreeD {
+        match &self.indices {
+            None => self.positions[i],
+            Some(indices) => self.positions[*indices.get(i).unwrap()],
         }
     }
 }
@@ -167,14 +173,10 @@ impl Rasterizer {
     pub(crate) fn draw(&mut self, cmd: DrawCommand) {
         let mut i: usize = 0;
 
-        let mut iter = cmd.mesh.get_iter();
-
-        let mut item = iter.next();
-
-        while item.is_some() {
-            let mut v0 = cmd.transform * item.unwrap().as_point();
-            let mut v1 = cmd.transform * iter.next().unwrap().as_point();
-            let mut v2 = cmd.transform * iter.next().unwrap().as_point();
+        while i < cmd.mesh.len() {
+            let mut v0 = cmd.transform * cmd.mesh.get(i).as_point();
+            let mut v1 = cmd.transform * cmd.mesh.get(i +1).as_point();
+            let mut v2 = cmd.transform * cmd.mesh.get(i+2).as_point();
 
             v0 = self.view_port.apply(v0);
             v1 = self.view_port.apply(v1);
