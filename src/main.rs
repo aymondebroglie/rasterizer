@@ -1,9 +1,14 @@
 mod algebra;
+mod colors;
+mod mesh;
 mod rasterizer;
 
 use crate::algebra::{Matrix, ThreeD};
-use crate::rasterizer::{CullMode, DrawCommand, Mesh, Rasterizer, ViewPort, RGBA};
+use crate::colors::RGBA;
+use crate::mesh::Mesh;
+use crate::rasterizer::{CullMode, DrawCommand, Rasterizer};
 use minifb::{Scale, ScaleMode, Window, WindowOptions};
+use std::f64::consts::PI;
 use std::time::Instant;
 
 fn main() {
@@ -27,16 +32,10 @@ fn main() {
 
     let mut view = Rasterizer::new(window.get_size().0, window.get_size().1);
     let mut last_frame_start = Instant::now();
-
-    let positions = [
-        ThreeD::new(0., 0.5, 0.),
-        ThreeD::new(-0.5, -0.5, 0.),
-        ThreeD::new(0.5, -0.5, 0.),
-    ];
-
-    let colors = [RGBA::red(), RGBA::green(), RGBA::blue()];
+    let mut rotation = 0.;
 
     view.clear(RGBA::new(0.8, 0.9, 1.1));
+    let mesh = Mesh::cube();
 
     while window.is_open() {
         let now = Instant::now();
@@ -46,14 +45,21 @@ fn main() {
             println!("Spent {} ms, {} fps ", dt, 1000 / dt);
         }
 
+        rotation += 0.001;
+
+        view.clear(RGBA::new(0.8, 0.9, 1.1));
+
+        let transform =
+            Matrix::perspective(0.01, 10., PI / 3., view.width as f64 / view.height as f64)
+                * Matrix::translate(ThreeD::new(0.,0.,-5.))
+                * Matrix::rotate_zx(rotation)
+                * Matrix::rotate_xy(rotation * 1.31);
+
+
         view.draw(DrawCommand {
-            mesh: Mesh {
-                positions: positions.as_slice(),
-                colors: &colors,
-                indices : None
-            },
-            cull_mode: CullMode::None,
-            transform: Matrix::identity(),
+            mesh: &mesh,
+            cull_mode: CullMode::ClockWise,
+            transform,
         });
 
         view.update(&mut window);

@@ -1,98 +1,14 @@
-use crate::algebra::{FourD, Matrix, ThreeD};
+use crate::algebra::{FourD, Matrix};
+use crate::colors::RGBA;
+use crate::mesh::Mesh;
 use minifb::Window;
 use std::mem::swap;
-use std::ops;
-use std::option::IntoIter;
 
-#[derive(Copy, Clone)]
-pub(crate) struct RGBA {
-    x: f64,
-    y: f64,
-    z: f64,
-}
-
-impl RGBA {
-    pub(crate) fn new(x: f64, y: f64, z: f64) -> Self {
-        RGBA { x, y, z }
-    }
-
-    pub(crate) fn red() -> Self {
-        Self::new(1., 0., 0.)
-    }
-
-    pub(crate) fn green() -> Self {
-        Self::new(0., 1., 0.)
-    }
-    pub(crate) fn blue() -> Self {
-        Self::new(0., 0., 1.)
-    }
-    fn r(&self) -> u8 {
-        (self.x * 255.) as u8
-    }
-    fn g(&self) -> u8 {
-        (self.y * 255.) as u8
-    }
-    fn b(&self) -> u8 {
-        (self.z * 255.) as u8
-    }
-    fn to_color(&self) -> u32 {
-        let r = self.r() as u32;
-        let g = self.g() as u32;
-        let b = self.b() as u32;
-
-        (r << 16) + (g << 8) + (b)
-    }
-}
-
-impl ops::Mul<f64> for RGBA {
-    type Output = RGBA;
-
-    fn mul(self, rhs: f64) -> Self::Output {
-        RGBA {
-            x: self.x * rhs,
-            y: self.y * rhs,
-            z: self.z * rhs,
-        }
-    }
-}
-
-impl ops::Add for RGBA {
-    type Output = RGBA;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        RGBA {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-            z: self.z + rhs.z,
-        }
-    }
-}
 pub(crate) struct Rasterizer {
     pixels: Vec<u32>,
-    width: usize,
-    height: usize,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
     view_port: ViewPort,
-}
-
-pub(crate) struct Mesh<'a> {
-    pub(crate) positions: &'a [ThreeD],
-    pub(crate) colors: &'a [RGBA],
-    pub(crate) indices: Option<Vec<usize>>,
-}
-
-impl Mesh<'_> {
-    fn len(&self) -> usize {
-        match &self.indices {
-            None => self.positions.len(),
-            Some(i) => i.len(),
-        }
-    }
-    fn get(&self, i: usize) -> ThreeD {
-        match &self.indices {
-            None => self.positions[i],
-            Some(indices) => self.positions[*indices.get(i).unwrap()],
-        }
-    }
 }
 
 pub(crate) enum CullMode {
@@ -102,7 +18,7 @@ pub(crate) enum CullMode {
 }
 
 pub(crate) struct DrawCommand<'a> {
-    pub(crate) mesh: Mesh<'a>,
+    pub(crate) mesh: &'a Mesh,
     pub(crate) cull_mode: CullMode,
     pub(crate) transform: Matrix,
 }
@@ -120,7 +36,7 @@ impl ViewPort {
             self.x_min as f64 + (self.x_max - self.x_min) as f64 * (0.5 + 0.5 * v.x()),
             self.y_min as f64 + (self.y_max - self.y_min) as f64 * (0.5 - 0.5 * v.y()),
             v.z(),
-            v.a(),
+            v.w(),
         )
     }
 }
@@ -175,19 +91,24 @@ impl Rasterizer {
 
         while i < cmd.mesh.len() {
             let mut v0 = cmd.transform * cmd.mesh.get(i).as_point();
-            let mut v1 = cmd.transform * cmd.mesh.get(i +1).as_point();
-            let mut v2 = cmd.transform * cmd.mesh.get(i+2).as_point();
+            let mut v1 = cmd.transform * cmd.mesh.get(i + 1).as_point();
+            let mut v2 = cmd.transform * cmd.mesh.get(i + 2).as_point();
+
+            v0.perspective_divide();
+            v1.perspective_divide();
+            v2.perspective_divide();
 
             v0 = self.view_port.apply(v0);
             v1 = self.view_port.apply(v1);
             v2 = self.view_port.apply(v2);
 
-            let c0 = cmd.mesh.colors[i];
-            let c1 = cmd.mesh.colors[i + 1];
-            let c2 = cmd.mesh.colors[i + 2];
+            let c0 = cmd.mesh.get_color(i);
+            let mut c1 = cmd.mesh.get_color(i + 1);
+            let mut c2 = cmd.mesh.get_color(i + 2);
 
             let mut det012 = (v1 - v0).det2d(&(v2 - v0));
             let is_counter_clockwise = det012 < 0.;
+
 
             let skip = match cmd.cull_mode {
                 CullMode::None => false,
@@ -195,12 +116,15 @@ impl Rasterizer {
                 CullMode::CounterClockWise => is_counter_clockwise,
             };
 
+            i += 3;
+
             if skip {
                 continue;
             }
 
             if is_counter_clockwise {
                 swap(&mut v1, &mut v2);
+                swap(&mut c1, &mut c2);
                 det012 = -det012;
             };
 
@@ -233,7 +157,6 @@ impl Rasterizer {
                 }
             }
 
-            i += 3;
         }
     }
 }
